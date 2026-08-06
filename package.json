@@ -1,0 +1,30 @@
+{
+  "name": "corenote",
+  "version": "1.0.0",
+  "description": "CoreNote - A modern developer note taking & task CLI",
+  "type": "module",
+  "main": "./bin/cnte.js",
+  "bin": {
+    "cnte": "./bin/cnte.js"
+  },
+  "scripts": {
+    "start": "node ./bin/cnte.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "cli",
+    "notes",
+    "tasks",
+    "git",
+    "markdown"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "ink": "^7.1.1",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.8"
+  }
+}
