@@ -23,6 +23,8 @@ describe('Parser Unit Tests', () => {
         tags: ['shopping'],
         priority: 'high',
         dueDate: '2026-08-10',
+        project: null,
+        branch: null,
         type: 'checkbox',
       });
     });
@@ -37,6 +39,8 @@ describe('Parser Unit Tests', () => {
         tags: [],
         priority: null,
         dueDate: null,
+        project: null,
+        branch: null,
         type: 'checkbox',
       });
     });

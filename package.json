@@ -25,6 +25,7 @@
     "commander": "^12.1.0",
     "ink": "^7.1.1",
     "ink-text-input": "^6.0.0",
+    "keytar": "^7.9.0",
     "react": "^19.2.8"
   }
 }

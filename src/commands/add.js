@@ -2,14 +2,16 @@ import { theme } from '../ui/theme.js';
 import { parseTodoLine } from '../lib/parser.js';
 import { readDayFile, writeDayFile, getTodayDateString } from '../lib/storage.js';
 import { syncPushWithWarning } from '../lib/git.js';
+import { getCwdGitContext } from '../lib/gitContext.js';
 
 export function registerAddCommand(program) {
   program
     .command('add <note...>')
-    .description('Add a new note or task to today\'s file')
+    .description("Add a new note or task to today's file")
     .option('-p, --priority <priority>', 'Set priority (high, medium, low)')
     .option('-t, --tag <tags...>', 'Add tags')
     .option('-d, --date <date>', 'Set due date (YYYY-MM-DD)')
+    .option('-b, --branch', 'Include current Git branch name in context metadata')
     .action((noteParts, options) => {
       const input = noteParts.join(' ');
       let line = input.startsWith('- [') ? input : `- [ ] ${input}`;
@@ -32,6 +34,18 @@ export function registerAddCommand(program) {
       }
 
       const parsed = parseTodoLine(line);
+
+      // Auto-detect Git context from current working directory
+      const gitContext = getCwdGitContext();
+      if (gitContext) {
+        if (!parsed.project && gitContext.repoName) {
+          parsed.project = gitContext.repoName;
+        }
+        if (options.branch && gitContext.branch) {
+          parsed.branch = gitContext.branch;
+        }
+      }
+
       const dateStr = getTodayDateString();
       const sections = readDayFile(dateStr);
 
@@ -47,6 +61,12 @@ export function registerAddCommand(program) {
 
       console.log(theme.success('✓ Note created and stored locally!'));
       console.log(`Content:  ${theme.highlight(parsed.text)}`);
+      if (parsed.project) {
+        console.log(`Project:  ${theme.highlight(parsed.project)}`);
+      }
+      if (parsed.branch) {
+        console.log(`Branch:   ${theme.highlight(parsed.branch)}`);
+      }
       if (parsed.priority) {
         console.log(`Priority: ${color(parsed.priority.toUpperCase())}`);
       }

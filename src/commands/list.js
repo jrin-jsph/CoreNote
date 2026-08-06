@@ -64,11 +64,12 @@ export function registerListCommand(program) {
           // Project filter
           if (options.project) {
             const reqProj = options.project.toLowerCase();
-            const hasProj = (item.tags || []).some((t) => {
+            const projFieldMatch = item.project && item.project.toLowerCase() === reqProj;
+            const tagMatch = (item.tags || []).some((t) => {
               const tagLower = t.toLowerCase();
               return tagLower === reqProj || tagLower === `project/${reqProj}`;
             });
-            if (!hasProj) return;
+            if (!projFieldMatch && !tagMatch) return;
           }
 
           // Due date filter
@@ -98,6 +99,8 @@ export function registerListCommand(program) {
             const textStr = todo.done ? chalk.strikethrough(todo.text) : todo.text;
             
             const tagsStr = (todo.tags || []).map((t) => chalk.cyan(`#${t}`)).join(' ');
+            const projStr = todo.project ? chalk.magenta(`project:${todo.project}`) : '';
+            const branchStr = todo.branch ? chalk.magenta(`branch:${todo.branch}`) : '';
 
             // Priority styling
             let prioStr = '';
@@ -126,7 +129,7 @@ export function registerListCommand(program) {
               }
             }
 
-            const row = ` ${idStr} ${checkbox} ${textStr} ${tagsStr} ${prioStr} ${dueStr}`.replace(/\s+/g, ' ').trim();
+            const row = ` ${idStr} ${checkbox} ${textStr} ${tagsStr} ${projStr} ${branchStr} ${prioStr} ${dueStr}`.replace(/\s+/g, ' ').trim();
             console.log(row);
             totalFound++;
           });

@@ -10,6 +10,7 @@ import { parseEntry } from '../src/lib/entryParser.js';
 import { readDayFile, writeDayFile, getTodayDateString } from '../src/lib/storage.js';
 import { syncPushWithWarning } from '../src/lib/git.js';
 import { launchTUI } from '../src/ui/App.js';
+import { getCwdGitContext } from '../src/lib/gitContext.js';
 
 import registerConfigCommand from '../src/commands/config.js';
 import registerAddCommand from '../src/commands/add.js';
@@ -37,6 +38,17 @@ if (process.argv.length <= 2) {
   // Helper function to handle smart entry execution
   function handleSmartEntry(rawInput) {
     const entry = parseEntry(rawInput);
+
+    const gitContext = getCwdGitContext();
+    if (gitContext) {
+      if (!entry.project && gitContext.repoName) {
+        entry.project = gitContext.repoName;
+      }
+      const hasBranchFlag = process.argv.includes('-b') || process.argv.includes('--branch');
+      if (hasBranchFlag && gitContext.branch) {
+        entry.branch = gitContext.branch;
+      }
+    }
     const dateStr = getTodayDateString();
 
     const sections = readDayFile(dateStr);
@@ -50,6 +62,12 @@ if (process.argv.length <= 2) {
 
     // Build metadata output string
     const metaParts = [];
+    if (entry.project) {
+      metaParts.push(`project: ${entry.project}`);
+    }
+    if (entry.branch) {
+      metaParts.push(`branch: ${entry.branch}`);
+    }
     if (entry.tags && entry.tags.length > 0) {
       metaParts.push(`tags: ${entry.tags.map((t) => '#' + t).join(', ')}`);
     }

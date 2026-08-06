@@ -208,6 +208,17 @@ export function push(commitMessage = 'update notes') {
   }
 }
 
+function isAuthError(errMsg) {
+  if (!errMsg) return false;
+  const str = String(errMsg).toLowerCase();
+  return (
+    str.includes('401') ||
+    str.includes('authentication failed') ||
+    str.includes('invalid credentials') ||
+    str.includes('could not read from remote')
+  );
+}
+
 /**
  * Execute pull before read commands with silent syncing message and graceful fallback warning
  */
@@ -219,7 +230,11 @@ export function syncPullWithWarning() {
   const res = pull();
   process.stdout.write('           \r');
   if (!res.success && !res.conflictMerged) {
-    console.log(chalk.yellow('⚠ Could not sync — working from local copy'));
+    if (isAuthError(res.error)) {
+      console.log(chalk.yellow('⚠ GitHub authentication failed or token expired. Please run `cnte init` to re-authenticate.'));
+    } else {
+      console.log(chalk.yellow('⚠ Could not sync — working from local copy'));
+    }
   }
 }
 
@@ -233,7 +248,11 @@ export function syncPushWithWarning(commitMessage) {
   }
   const res = push(commitMessage);
   if (!res.success) {
-    console.log(chalk.yellow('⚠ Could not sync — changes saved locally'));
+    if (isAuthError(res.error)) {
+      console.log(chalk.yellow('⚠ GitHub authentication failed or token expired. Please run `cnte init` to re-authenticate.'));
+    } else {
+      console.log(chalk.yellow('⚠ Could not sync — changes saved locally'));
+    }
   }
 }
 

@@ -63,12 +63,30 @@ export function parseTodoLine(line) {
       tags: extractTags(line),
       priority: extractPriority(line),
       dueDate: null,
+      project: null,
+      branch: null,
       type: 'checkbox',
     };
   }
 
   const done = match[1].toLowerCase() === 'x';
   let content = match[2];
+
+  // Extract project (project:<name> or #project/<name>)
+  let project = null;
+  const projMatch = content.match(/\s*project:([\w-]+)/i) || content.match(/\s*#project\/([\w-]+)/i);
+  if (projMatch) {
+    project = projMatch[1];
+    content = content.replace(projMatch[0], '');
+  }
+
+  // Extract branch (branch:<name> or #branch/<name>)
+  let branch = null;
+  const branchMatch = content.match(/\s*branch:([\w\/-]+)/i) || content.match(/\s*#branch\/([\w\/-]+)/i);
+  if (branchMatch) {
+    branch = branchMatch[1];
+    content = content.replace(branchMatch[0], '');
+  }
 
   // Extract due date (@YYYY-MM-DD or @word)
   let dueDate = null;
@@ -89,7 +107,7 @@ export function parseTodoLine(line) {
   // Extract tags (#tag)
   const tags = extractTags(content);
   // Remove tags from text
-  const textWithoutTags = content.replace(/\s*#[\w-]+/g, '').trim();
+  const textWithoutTags = content.replace(/\s*#[\w\/-]+/g, '').trim();
 
   return {
     done,
@@ -97,16 +115,18 @@ export function parseTodoLine(line) {
     tags,
     priority,
     dueDate,
+    project,
+    branch,
     type: 'checkbox',
   };
 }
 
 /**
  * Build a markdown todo line string from an object
- * @param {{ done: boolean, text: string, tags?: string[], priority?: string | null, dueDate?: string | null }} todo 
+ * @param {{ done: boolean, text: string, tags?: string[], priority?: string | null, dueDate?: string | null, project?: string | null, branch?: string | null }} todo 
  * @returns {string}
  */
-export function buildTodoLine({ done = false, text = '', tags = [], priority = null, dueDate = null }) {
+export function buildTodoLine({ done = false, text = '', tags = [], priority = null, dueDate = null, project = null, branch = null }) {
   const checkbox = done ? '[x]' : '[ ]';
   const parts = [`- ${checkbox} ${text.trim()}`];
 
@@ -116,6 +136,14 @@ export function buildTodoLine({ done = false, text = '', tags = [], priority = n
     if (newTags.length > 0) {
       parts.push(newTags.map((t) => `#${t}`).join(' '));
     }
+  }
+
+  if (project && !text.includes(`project:${project}`) && !text.includes(`#project/${project}`)) {
+    parts.push(`project:${project}`);
+  }
+
+  if (branch && !text.includes(`branch:${branch}`) && !text.includes(`#branch/${branch}`)) {
+    parts.push(`branch:${branch}`);
   }
 
   if (priority && !text.includes(`!!${priority}`) && !text.includes(`!${priority}`)) {

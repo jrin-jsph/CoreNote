@@ -48,6 +48,22 @@ export function parseEntry(rawInput) {
     }
   }
 
+  // Extract project (project:<name>)
+  let project = null;
+  const projMatch = text.match(/\s*project:([\w-]+)/i);
+  if (projMatch) {
+    project = projMatch[1];
+    text = text.replace(projMatch[0], '');
+  }
+
+  // Extract branch (branch:<name>)
+  let branch = null;
+  const branchMatch = text.match(/\s*branch:([\w\/-]+)/i);
+  if (branchMatch) {
+    branch = branchMatch[1];
+    text = text.replace(branchMatch[0], '');
+  }
+
   // Extract inline metadata (#tag, !!N / !!priority, @date / @word)
   let dueDate = null;
   const dateMatch = text.match(/\s*@(\d{4}-\d{2}-\d{2}|\w+)\b/);
@@ -64,10 +80,10 @@ export function parseEntry(rawInput) {
   }
 
   const tags = [];
-  const tagMatches = text.match(/#[\w-]+/g);
+  const tagMatches = text.match(/#[\w\/-]+/g);
   if (tagMatches) {
     tagMatches.forEach((t) => tags.push(t.slice(1)));
-    text = text.replace(/\s*#[\w-]+/g, '');
+    text = text.replace(/\s*#[\w\/-]+/g, '');
   }
 
   return {
@@ -77,6 +93,8 @@ export function parseEntry(rawInput) {
     tags,
     priority,
     dueDate,
+    project,
+    branch,
   };
 }
 
