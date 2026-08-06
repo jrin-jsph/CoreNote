@@ -8,7 +8,7 @@
  * @returns {string[]}
  */
 export function extractTags(text) {
-  const matches = text.match(/#[\w-]+/g);
+  const matches = text.match(/#[\w\/-]+/g);
   return matches ? matches.map((tag) => tag.slice(1)) : [];
 }
 

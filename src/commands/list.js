@@ -21,6 +21,7 @@ export function registerListCommand(program) {
     .option('-t, --tag <tag>', 'Filter by tag')
     .option('-p, --priority <priority>', 'Filter by priority (1, 2, 3 or high, medium, low)')
     .option('-d, --due <due>', 'Filter by due status (today, tomorrow, overdue)')
+    .option('--project <name>', 'Filter by project name (#project/<name> or #<name>)')
     .action((options) => {
       syncPullWithWarning();
       const todayStr = getTodayDateString();
@@ -58,6 +59,16 @@ export function registerListCommand(program) {
             const reqTag = options.tag.replace(/^#/, '').toLowerCase();
             const hasTag = (item.tags || []).some((t) => t.toLowerCase() === reqTag);
             if (!hasTag) return;
+          }
+
+          // Project filter
+          if (options.project) {
+            const reqProj = options.project.toLowerCase();
+            const hasProj = (item.tags || []).some((t) => {
+              const tagLower = t.toLowerCase();
+              return tagLower === reqProj || tagLower === `project/${reqProj}`;
+            });
+            if (!hasProj) return;
           }
 
           // Due date filter

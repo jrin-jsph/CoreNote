@@ -18,6 +18,19 @@ export function getTodayDateString() {
 }
 
 /**
+ * Get yesterday date string formatted as YYYY-MM-DD
+ * @returns {string}
+ */
+export function getYesterdayDateString() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Get full file path for a specific date's markdown file (~/.corenote/todos/YYYY-MM-DD.md)
  * @param {string} [dateString] 
  * @returns {string}
@@ -161,6 +174,7 @@ export function writeDayFile(dateString = getTodayDateString(), sectionsObject =
 
 export default {
   getTodayDateString,
+  getYesterdayDateString,
   getFilePath,
   getTodayFilePath,
   ensureFileExists,

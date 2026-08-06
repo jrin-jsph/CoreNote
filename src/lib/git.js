@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import chalk from 'chalk';
+import config from './config.js';
 import { parseMarkdownToSections, sectionsToMarkdown, mergeSections } from './parser.js';
 
 /**
@@ -115,6 +116,7 @@ export function pull() {
   }
   try {
     execGit('pull --rebase --quiet');
+    config.set('lastSyncTime', new Date().toISOString());
     return { success: true, error: null };
   } catch (error) {
     // Attempt automatic merge conflict resolution
@@ -199,6 +201,7 @@ export function push(commitMessage = 'update notes') {
     }
 
     execGit('push --quiet', cwd);
+    config.set('lastSyncTime', new Date().toISOString());
     return { success: true, error: null };
   } catch (error) {
     return { success: false, error: error.message };
