@@ -11,6 +11,11 @@
     "start": "node ./bin/cnte.js",
     "test": "node --test"
   },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
   "keywords": [
     "cli",
     "notes",
