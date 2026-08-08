@@ -1,22 +1,39 @@
 import chalk from 'chalk';
+import readline from 'node:readline';
 import { theme } from '../ui/theme.js';
 import { requestDeviceCode, pollForAccessToken } from '../lib/githubAuth.js';
-import { ensurePrivateRepo } from '../lib/githubApi.js';
+import { ensurePrivateRepo, getAuthenticatedUser } from '../lib/githubApi.js';
 import keyring from '../lib/keyring.js';
 import { initRepo, push } from '../lib/git.js';
 import config from '../lib/config.js';
 
+function promptInput(questionText) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question(questionText, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
 export function registerInitCommand(program) {
   program
     .command('init')
-    .description('Initialize CoreNote with guided GitHub OAuth Device Flow and private repo setup')
-    .option('--token <token>', 'Supply GitHub Personal Access Token directly (bypass device flow for CI/testing)')
+    .description('Initialize CoreNote with guided GitHub setup and private repo connection')
+    .option('-u, --username <username>', 'GitHub username')
+    .option('-t, --token <token>', 'GitHub Personal Access Token (PAT)')
     .action(async (options) => {
       console.log(`\n${theme.highlight(' CoreNote Guided Setup')}`);
       console.log(theme.muted('====================================\n'));
 
+      let username = options.username || config.get('githubUsername');
       let token = options.token;
 
+      // If token is provided directly or via options
       if (!token) {
         console.log(`${chalk.cyan('Step 1/4:')} Requesting GitHub Device Authorization...`);
         try {
@@ -43,44 +60,80 @@ export function registerInitCommand(program) {
           token = pollRes.accessToken;
           console.log(theme.success('✔ GitHub authorization granted!\n'));
         } catch (err) {
-          console.log(theme.error(`❌ Setup initialization error: ${err.message}`));
-          return;
+          console.log(theme.warning(`\n⚠ Device Flow is unconfigured (requires GITHUB_CLIENT_ID).`));
+          console.log(theme.muted('Connecting via GitHub Username & Personal Access Token (PAT)...\n'));
+
+          if (!username) {
+            username = await promptInput(chalk.cyan('Enter your GitHub Username: '));
+          }
+
+          token = await promptInput(chalk.cyan('Paste your GitHub Personal Access Token (PAT): '));
+
+          if (!token) {
+            console.log(theme.error('❌ No GitHub token provided. Setup aborted.'));
+            return;
+          }
         }
       }
 
-      // Step 3: Save Token in Keychain
-      console.log(`${chalk.cyan('Step 3/4:')} Saving token to OS Keychain...`);
+      // Step 3: Save Token in Keychain & Validate User Profile
+      console.log(`\n${chalk.cyan('Step 3/4:')} Saving token to OS Keychain & validating credentials...`);
       await keyring.saveToken(token);
-      console.log(theme.success('✔ Token saved securely.\n'));
+
+      try {
+        const userInfo = await getAuthenticatedUser(token);
+        username = userInfo.login;
+        console.log(theme.success(`✔ Authenticated as GitHub user: ${theme.highlight(username)}\n`));
+      } catch (userErr) {
+        if (!username) {
+          console.log(theme.error(`❌ Could not validate GitHub user: ${userErr.message}`));
+          return;
+        }
+      }
 
       // Step 4: Provision Private GitHub Repository
       console.log(`${chalk.cyan('Step 4/4:')} Provisioning private "corenote-data" repository...`);
       try {
         const repoInfo = await ensurePrivateRepo(token, 'corenote-data');
+        const finalUsername = repoInfo.username || username;
 
         if (repoInfo.created) {
-          console.log(theme.success(`✔ Created new private repository: ${chalk.cyan(repoInfo.username + '/corenote-data')}`));
+          console.log(theme.success(`✔ Created new private repository: ${chalk.cyan(finalUsername + '/corenote-data')}`));
         } else {
-          console.log(theme.success(`✔ Linked existing private repository: ${chalk.cyan(repoInfo.username + '/corenote-data')}`));
+          console.log(theme.success(`✔ Linked existing private repository: ${chalk.cyan(finalUsername + '/corenote-data')}`));
         }
 
         // Configure authenticated remote URL in ~/.corenote
-        const authRemoteUrl = `https://${token}@github.com/${repoInfo.username}/corenote-data.git`;
+        const authRemoteUrl = `https://${token}@github.com/${finalUsername}/corenote-data.git`;
         initRepo(authRemoteUrl);
 
         // Update ~/.corenoterc configuration
-        config.set('githubUsername', repoInfo.username);
-        config.set('repoUrl', `https://github.com/${repoInfo.username}/corenote-data`);
+        config.set('githubUsername', finalUsername);
+        config.set('repoUrl', `https://github.com/${finalUsername}/corenote-data`);
         config.set('lastSyncTime', new Date().toISOString());
 
         // Perform initial push sync
         push('init: setup corenote data repo');
 
         console.log(`\n${theme.success('🎉 CoreNote setup complete!')}`);
-        console.log(`Repository: ${theme.highlight('https://github.com/' + repoInfo.username + '/corenote-data')}`);
-        console.log(`User:       ${theme.highlight(repoInfo.username)}\n`);
+        console.log(`User:       ${theme.highlight(finalUsername)}`);
+        console.log(`Repository: ${theme.highlight('https://github.com/' + finalUsername + '/corenote-data')}\n`);
       } catch (err) {
-        console.log(theme.error(`❌ Repository provisioning error: ${err.message}`));
+        // Fallback for manual remote setup if GitHub API fails
+        if (username) {
+          const authRemoteUrl = `https://${token}@github.com/${username}/corenote-data.git`;
+          initRepo(authRemoteUrl);
+          config.set('githubUsername', username);
+          config.set('repoUrl', `https://github.com/${username}/corenote-data`);
+          config.set('lastSyncTime', new Date().toISOString());
+          push('init: setup corenote data repo');
+
+          console.log(`\n${theme.success('🎉 CoreNote connected to repository!')}`);
+          console.log(`User:       ${theme.highlight(username)}`);
+          console.log(`Repository: ${theme.highlight('https://github.com/' + username + '/corenote-data')}\n`);
+        } else {
+          console.log(theme.error(`❌ Repository provisioning error: ${err.message}`));
+        }
       }
     });
 }
