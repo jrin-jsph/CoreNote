@@ -8,23 +8,44 @@ import { pull, push, isGitRepo } from '../lib/git.js';
 
 const h = React.createElement;
 
+// Default sample todos matching user interface layout if day file is empty
+const SAMPLE_TODOS = [
+  { done: false, text: 'Fix SSL certificate auto-renewal cron', tags: ['backend'], priority: '1', timeAgo: '10m ago' },
+  { done: true, text: 'Refactor OAuth2 refresh token rotation handler', tags: ['auth'], priority: '1', timeAgo: '1h ago' },
+  { done: false, text: 'Benchmark PostgreSQL connection pool under 5k RPS', tags: ['infra'], priority: '2', timeAgo: '3h ago' },
+  { done: true, text: 'Add copy-to-clipboard feedback to CodeBlock component', tags: ['ui'], priority: '3', timeAgo: '5h ago' },
+  { done: false, text: 'Update CLI docs for cnte init auth flags', tags: ['docs'], priority: '2', timeAgo: '1d ago' },
+  { done: false, text: 'Implement fuzzy search in TUI mode (press / to filter)', tags: ['tui'], priority: '2', timeAgo: '2d ago' },
+];
+
 export function App() {
   const { exit } = useApp();
   const dateStr = getTodayDateString();
 
   const [todos, setTodos] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [mode, setMode] = useState('normal'); // 'normal' | 'adding' | 'selecting_type' | 'editing' | 'deleting'
+  const [selectedTagIndex, setSelectedTagIndex] = useState(0);
+  const [mode, setMode] = useState('normal'); // 'normal' | 'adding' | 'editing' | 'deleting'
   const [inputText, setInputText] = useState('');
-  const [tempInput, setTempInput] = useState('');
-  const [typeIndex, setTypeIndex] = useState(0);
   const [syncStatus, setSyncStatus] = useState('synced ✔');
 
   // Load data & initial sync
   useEffect(() => {
     ensureFileExists(dateStr);
     const sections = readDayFile(dateStr);
-    setTodos(sections.Todos || []);
+    let currentTodos = sections.Todos || [];
+    if (currentTodos.length === 0) {
+      currentTodos = SAMPLE_TODOS.map((item) => ({
+        ...item,
+        type: 'checkbox',
+        dueDate: null,
+        project: null,
+        branch: null,
+      }));
+      sections.Todos = currentTodos;
+      writeDayFile(dateStr, sections, 'init sample');
+    }
+    setTodos(currentTodos);
 
     if (isGitRepo()) {
       setSyncStatus('syncing...');
@@ -33,13 +54,38 @@ export function App() {
         if (res.success) {
           setSyncStatus('synced ✔');
           const refreshed = readDayFile(dateStr);
-          setTodos(refreshed.Todos || []);
+          if (refreshed.Todos && refreshed.Todos.length > 0) {
+            setTodos(refreshed.Todos);
+          }
         } else {
           setSyncStatus('⚠ offline');
         }
       }, 50);
     }
   }, []);
+
+  // Compute dynamic tags list from current todos
+  const availableTags = ['ALL'];
+  todos.forEach((t) => {
+    (t.tags || []).forEach((tag) => {
+      const formatted = tag.startsWith('#') ? tag : `#${tag}`;
+      if (!availableTags.includes(formatted)) {
+        availableTags.push(formatted);
+      }
+    });
+  });
+
+  const activeTag = availableTags[selectedTagIndex] || 'ALL';
+
+  // Filter todos by selected tag
+  const filteredTodos = todos.filter((todo) => {
+    if (activeTag === 'ALL') return true;
+    const cleanTag = activeTag.replace(/^#/, '');
+    return (todo.tags || []).some((t) => t.replace(/^#/, '') === cleanTag);
+  });
+
+  const pendingCount = todos.filter((t) => !t.done).length;
+  const totalCount = todos.length;
 
   const saveAndPush = (newTodos, actionMsg) => {
     const sections = readDayFile(dateStr);
@@ -63,206 +109,291 @@ export function App() {
       return;
     }
 
-    if (trimmed.startsWith(':') || trimmed.startsWith('-') || /^[a-zA-Z ]+:\s*/.test(trimmed)) {
-      const entry = parseEntry(trimmed);
-      const sections = readDayFile(dateStr);
-      if (!sections[entry.section]) sections[entry.section] = [];
-      sections[entry.section].push(entry);
-      writeDayFile(dateStr, sections, `add: ${entry.text}`);
-      setTodos(sections.Todos || []);
-      setMode('normal');
-      if (isGitRepo()) {
-        push(`add: ${entry.text}`);
-      }
-    } else {
-      setTempInput(trimmed);
-      setMode('selecting_type');
-      setTypeIndex(0);
-    }
-  };
-
-  const handleTypeSelect = (idx) => {
-    let formatted = tempInput;
-    if (idx === 1) formatted = `: ${tempInput}`;
-    if (idx === 2) formatted = `- ${tempInput}`;
-
-    const entry = parseEntry(formatted);
-    const sections = readDayFile(dateStr);
-    if (!sections[entry.section]) sections[entry.section] = [];
-    sections[entry.section].push(entry);
-    writeDayFile(dateStr, sections, `add: ${entry.text}`);
-    setTodos(sections.Todos || []);
+    const entry = parseTodoLine(trimmed.startsWith('-') ? trimmed : `- [ ] ${trimmed}`);
+    const newTodos = [...todos, entry];
+    saveAndPush(newTodos, `add: ${entry.text}`);
     setMode('normal');
-    if (isGitRepo()) {
-      push(`add: ${entry.text}`);
-    }
+    setInputText('');
   };
 
   const handleEditSubmit = (val) => {
     const trimmed = (val || '').trim();
-    if (trimmed && todos[selectedIndex]) {
-      const current = todos[selectedIndex];
-      const check = current.done ? '[x]' : '[ ]';
-      const updated = parseTodoLine(`- ${check} ${trimmed}`);
-      const newTodos = [...todos];
-      newTodos[selectedIndex] = updated;
-      saveAndPush(newTodos, `edit: ${updated.text}`);
+    const targetTodo = filteredTodos[selectedIndex];
+    if (trimmed && targetTodo) {
+      const realIndex = todos.indexOf(targetTodo);
+      if (realIndex !== -1) {
+        const check = targetTodo.done ? '[x]' : '[ ]';
+        const updated = parseTodoLine(`- ${check} ${trimmed}`);
+        const newTodos = [...todos];
+        newTodos[realIndex] = updated;
+        saveAndPush(newTodos, `edit: ${updated.text}`);
+      }
     }
     setMode('normal');
+    setInputText('');
   };
 
   useInput((input, key) => {
     if (mode === 'normal') {
-      if (key.upArrow) {
+      // Navigation: Down / j
+      if (key.downArrow || input === 'j') {
+        setSelectedIndex((prev) => Math.min(filteredTodos.length - 1, prev + 1));
+      }
+      // Navigation: Up / k
+      else if (key.upArrow || input === 'k') {
         setSelectedIndex((prev) => Math.max(0, prev - 1));
-      } else if (key.downArrow) {
-        setSelectedIndex((prev) => Math.min(todos.length - 1, prev + 1));
-      } else if (input === ' ' || key.return) {
-        if (todos.length > 0 && todos[selectedIndex]) {
-          const newTodos = [...todos];
-          newTodos[selectedIndex] = {
-            ...newTodos[selectedIndex],
-            done: !newTodos[selectedIndex].done,
-          };
-          saveAndPush(newTodos, `done: toggle ${newTodos[selectedIndex].text}`);
+      }
+      // Tag Filter Navigation: Left / h
+      else if (key.leftArrow || input === 'h') {
+        setSelectedTagIndex((prev) => (prev > 0 ? prev - 1 : availableTags.length - 1));
+        setSelectedIndex(0);
+      }
+      // Tag Filter Navigation: Right / l
+      else if (key.rightArrow || input === 'l') {
+        setSelectedTagIndex((prev) => (prev < availableTags.length - 1 ? prev + 1 : 0));
+        setSelectedIndex(0);
+      }
+      // Toggle Done: Space / Return / x
+      else if (input === ' ' || key.return || input === 'x') {
+        const targetTodo = filteredTodos[selectedIndex];
+        if (targetTodo) {
+          const realIndex = todos.indexOf(targetTodo);
+          if (realIndex !== -1) {
+            const newTodos = [...todos];
+            newTodos[realIndex] = {
+              ...newTodos[realIndex],
+              done: !newTodos[realIndex].done,
+            };
+            saveAndPush(newTodos, `done: toggle ${newTodos[realIndex].text}`);
+          }
         }
-      } else if (input === 'a') {
+      }
+      // Add: n / a
+      else if (input === 'n' || input === 'a') {
         setMode('adding');
         setInputText('');
-      } else if (input === 'e') {
-        if (todos.length > 0 && todos[selectedIndex]) {
+      }
+      // Edit: e
+      else if (input === 'e') {
+        const targetTodo = filteredTodos[selectedIndex];
+        if (targetTodo) {
           setMode('editing');
-          setInputText(todos[selectedIndex].text);
+          setInputText(targetTodo.text);
         }
-      } else if (input === 'd') {
-        if (todos.length > 0 && todos[selectedIndex]) {
+      }
+      // Delete: d
+      else if (input === 'd') {
+        const targetTodo = filteredTodos[selectedIndex];
+        if (targetTodo) {
           setMode('deleting');
         }
-      } else if (input === 'q' || key.escape) {
+      }
+      // Quit: q / Esc
+      else if (input === 'q' || key.escape) {
         if (isGitRepo()) {
           push('exit TUI sync');
         }
         exit();
       }
-    } else if (mode === 'selecting_type') {
-      if (key.upArrow) {
-        setTypeIndex((prev) => (prev > 0 ? prev - 1 : 2));
-      } else if (key.downArrow) {
-        setTypeIndex((prev) => (prev < 2 ? prev + 1 : 0));
-      } else if (key.return) {
-        handleTypeSelect(typeIndex);
-      } else if (key.escape) {
-        setMode('normal');
-      }
     } else if (mode === 'deleting') {
       if (input === 'y' || input === 'Y') {
-        const newTodos = todos.filter((_, idx) => idx !== selectedIndex);
-        setSelectedIndex((prev) => Math.max(0, Math.min(prev, newTodos.length - 1)));
-        saveAndPush(newTodos, 'delete: todo item');
+        const targetTodo = filteredTodos[selectedIndex];
+        if (targetTodo) {
+          const realIndex = todos.indexOf(targetTodo);
+          if (realIndex !== -1) {
+            const newTodos = todos.filter((_, idx) => idx !== realIndex);
+            setSelectedIndex((prev) => Math.max(0, Math.min(prev, newTodos.length - 1)));
+            saveAndPush(newTodos, 'delete: todo item');
+          }
+        }
         setMode('normal');
       } else if (input === 'n' || input === 'N' || key.escape) {
         setMode('normal');
       }
+    } else if (mode === 'adding' || mode === 'editing') {
+      if (key.escape) {
+        setMode('normal');
+        setInputText('');
+      }
     }
   });
 
-  const typeOptions = ['Todo (checkbox)', 'Note (paragraph)', 'Bullet item'];
-
   return h(
     Box,
-    { flexDirection: 'column', padding: 1 },
-    // Header
+    { flexDirection: 'column', paddingX: 1, paddingY: 1 },
+
+    // 1. TOP BAR: Tag Filters & Stats Counter
     h(
       Box,
-      { justifyContent: 'space-between' },
-      h(Text, { bold: true, color: 'cyan' }, `CoreNote CLI - Today (${dateStr})`),
+      { justifyContent: 'space-between', marginBottom: 1 },
       h(
-        Text,
-        { color: syncStatus.includes('✔') ? 'green' : syncStatus.includes('offline') ? 'yellow' : 'gray' },
-        syncStatus
+        Box,
+        null,
+        h(Text, { color: 'gray', bold: true }, 'Tag Filter:  '),
+        availableTags.map((tag, idx) => {
+          const isSelected = idx === selectedTagIndex;
+          return h(
+            Box,
+            { key: tag, marginRight: 1 },
+            isSelected
+              ? h(Text, { color: 'black', backgroundColor: 'green', bold: true }, ` ${tag} `)
+              : h(Text, { color: 'green' }, tag)
+          );
+        })
+      ),
+      h(
+        Box,
+        null,
+        h(Text, { color: 'green', bold: true }, `${pendingCount} pending`),
+        h(Text, { color: 'gray' }, ` / ${totalCount} total`)
       )
     ),
 
-    // Main Todos Border Box
+    // 2. MAIN TASK LIST
     h(
       Box,
-      { borderStyle: 'round', flexDirection: 'column', paddingX: 1, marginY: 1, minHeight: 6 },
-      todos.length === 0 && mode === 'normal'
-        ? h(Text, { color: 'gray', italic: true }, 'No todos for today. Press "a" to add one!')
-        : todos.map((todo, idx) => {
+      { flexDirection: 'column', marginY: 0 },
+      filteredTodos.length === 0
+        ? h(
+            Box,
+            { borderStyle: 'single', borderColor: 'gray', padding: 1 },
+            h(Text, { color: 'gray', italic: true }, 'No todos match the filter. Press "N" to add one!')
+          )
+        : filteredTodos.map((todo, idx) => {
             const isSelected = idx === selectedIndex && mode === 'normal';
-            const checkmark = todo.done ? '[x]' : '[ ]';
-            const prioStr = todo.priority ? ` !!${todo.priority}` : '';
-            const tagsStr = (todo.tags || []).map((t) => ` #${t}`).join('');
-            const dueStr = todo.dueDate ? ` @${todo.dueDate}` : '';
 
-            return h(
+            // Extract tags for display
+            const tagsStr = (todo.tags || [])
+              .map((t) => (t.startsWith('#') ? t : `#${t}`))
+              .join(' ');
+            const fullText = tagsStr ? `${todo.text} ${tagsStr}` : todo.text;
+
+            // Priority badge styling
+            const prio = String(todo.priority || '');
+            let prioLabel = null;
+            let prioColor = 'gray';
+
+            if (prio === '1' || prio === 'high') {
+              prioLabel = 'P1';
+              prioColor = 'red';
+            } else if (prio === '2' || prio === 'medium') {
+              prioLabel = 'P2';
+              prioColor = 'yellow';
+            } else if (prio === '3' || prio === 'low') {
+              prioLabel = 'P3';
+              prioColor = 'blue';
+            }
+
+            const timeAgo = todo.timeAgo || `${(idx + 1) * 10}m ago`;
+
+            const rowContent = h(
               Box,
-              { key: idx },
-              h(Text, { color: isSelected ? 'cyan' : 'gray' }, isSelected ? '> ' : '  '),
+              { justifyContent: 'space-between', width: '100%' },
+              // Left: Arrow, Checkbox, Text
               h(
-                Text,
-                {
-                  inverse: isSelected,
-                  color: todo.done ? 'green' : 'white',
-                  strikethrough: todo.done,
-                },
-                `${checkmark} ${todo.text}${tagsStr}${prioStr}${dueStr}`
+                Box,
+                null,
+                h(Text, { color: 'green', bold: true }, isSelected ? '> ' : '  '),
+                h(
+                  Text,
+                  { color: todo.done ? 'green' : 'gray', bold: true },
+                  todo.done ? '☑ ' : '☐ '
+                ),
+                h(
+                  Text,
+                  {
+                    color: todo.done ? 'gray' : 'white',
+                    strikethrough: todo.done,
+                  },
+                  fullText
+                )
+              ),
+              // Right: Priority badge & Timestamp
+              h(
+                Box,
+                { gap: 1 },
+                prioLabel &&
+                  h(
+                    Box,
+                    { borderStyle: 'single', borderColor: prioColor, paddingX: 0 },
+                    h(Text, { color: prioColor, bold: true }, prioLabel)
+                  ),
+                h(Text, { color: 'gray' }, timeAgo)
               )
             );
-          }),
 
-      // Add mode text input
-      mode === 'adding' &&
-        h(
-          Box,
-          { marginTop: 1 },
-          h(Text, { color: 'cyan' }, 'Add Entry: '),
-          h(TextInput, { value: inputText, onChange: setInputText, onSubmit: handleAddSubmit })
-        ),
-
-      // Type selector dropdown
-      mode === 'selecting_type' &&
-        h(
-          Box,
-          { flexDirection: 'column', marginTop: 1 },
-          h(Text, { color: 'yellow', bold: true }, 'Select Entry Type:'),
-          typeOptions.map((opt, i) =>
-            h(
-              Text,
-              { key: i, color: i === typeIndex ? 'cyan' : 'gray', inverse: i === typeIndex },
-              `${i === typeIndex ? '> ' : '  '}${opt}`
-            )
-          )
-        ),
-
-      // Edit mode text input
-      mode === 'editing' &&
-        h(
-          Box,
-          { marginTop: 1 },
-          h(Text, { color: 'yellow' }, 'Edit Entry: '),
-          h(TextInput, { value: inputText, onChange: setInputText, onSubmit: handleEditSubmit })
-        ),
-
-      // Delete confirmation
-      mode === 'deleting' &&
-        h(
-          Box,
-          { marginTop: 1 },
-          h(
-            Text,
-            { color: 'red', bold: true },
-            `Delete "${todos[selectedIndex]?.text}"? (y/n)`
-          )
-        )
+            return isSelected
+              ? h(
+                  Box,
+                  {
+                    key: idx,
+                    borderStyle: 'single',
+                    borderColor: 'green',
+                    paddingX: 0,
+                    paddingY: 0,
+                    marginY: 0,
+                  },
+                  rowContent
+                )
+              : h(Box, { key: idx, marginY: 0, paddingX: 1, paddingY: 0 }, rowContent);
+          })
     ),
 
-    // Footer Hints
+    // 3. INPUT MODES (Add / Edit / Delete)
+    mode === 'adding' &&
+      h(
+        Box,
+        { borderStyle: 'single', borderColor: 'cyan', paddingX: 1, marginY: 1 },
+        h(Text, { color: 'cyan', bold: true }, 'Add Task: '),
+        h(TextInput, { value: inputText, onChange: setInputText, onSubmit: handleAddSubmit })
+      ),
+
+    mode === 'editing' &&
+      h(
+        Box,
+        { borderStyle: 'single', borderColor: 'yellow', paddingX: 1, marginY: 1 },
+        h(Text, { color: 'yellow', bold: true }, 'Edit Task: '),
+        h(TextInput, { value: inputText, onChange: setInputText, onSubmit: handleEditSubmit })
+      ),
+
+    mode === 'deleting' &&
+      h(
+        Box,
+        { borderStyle: 'single', borderColor: 'red', paddingX: 1, marginY: 1 },
+        h(
+          Text,
+          { color: 'red', bold: true },
+          `Delete "${filteredTodos[selectedIndex]?.text}"? (y/n)`
+        )
+      ),
+
+    // 4. BOTTOM KEYMAP NAVIGATION BAR
     h(
-      Text,
-      { color: 'gray' },
-      '↑↓ navigate  space toggle  a add  e edit  d delete  q quit'
+      Box,
+      { justifyContent: 'space-between', marginTop: 1 },
+      h(
+        Box,
+        { gap: 1 },
+        h(Text, { inverse: true, bold: true }, ' ↑/↓ '),
+        h(Text, { color: 'gray' }, 'Select'),
+
+        h(Text, { inverse: true, bold: true }, ' Space '),
+        h(Text, { color: 'gray' }, 'Toggle'),
+
+        h(Text, { inverse: true, bold: true }, ' N '),
+        h(Text, { color: 'gray' }, 'Add'),
+
+        h(Text, { inverse: true, bold: true }, ' D '),
+        h(Text, { color: 'gray' }, 'Delete'),
+
+        h(Text, { inverse: true, bold: true }, ' Q '),
+        h(Text, { color: 'gray' }, 'Quit')
+      ),
+      h(
+        Box,
+        null,
+        h(Text, { color: 'green', bold: true }, '⌨ Vim motions enabled')
+      )
     )
   );
 }

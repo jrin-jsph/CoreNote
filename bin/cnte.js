@@ -19,6 +19,7 @@ import registerSyncCommand from '../src/commands/sync.js';
 import registerInitCommand from '../src/commands/init.js';
 import registerDoneCommand from '../src/commands/done.js';
 import registerEditCommand from '../src/commands/edit.js';
+import registerDeleteCommand from '../src/commands/delete.js';
 import registerUndoCommand from '../src/commands/undo.js';
 import registerShowCommand from '../src/commands/show.js';
 import registerRemoteCommand from '../src/commands/remote.js';
@@ -93,6 +94,9 @@ if (process.argv.length <= 2) {
     'ls',
     'done',
     'edit',
+    'delete',
+    'rm',
+    'del',
     'undo',
     'show',
     'cat',
@@ -137,6 +141,7 @@ ${theme.highlight('Quick Usage:')}
   $ cnte list [--all] [--tag <t>] [--priority <n>] (List Todos)
   $ cnte done <id>                                (Mark Todo Done)
   $ cnte edit <id> "<new text>"                   (Edit Todo)
+  $ cnte delete <id> / cnte rm <id>               (Delete Todo)
   $ cnte carry                                    (Carry Forward Undone Todos)
   $ cnte stats                                    (Productivity Statistics)
   $ cnte whoami                                   (User Profile & Sync Info)
@@ -154,6 +159,7 @@ ${theme.muted('For more help on a specific command, run:')}
   registerListCommand(program);
   registerDoneCommand(program);
   registerEditCommand(program);
+  registerDeleteCommand(program);
   registerCarryCommand(program);
   registerStatsCommand(program);
   registerWhoamiCommand(program);

@@ -102,6 +102,7 @@ One command, prefix decides the type:
 | `cnte list [--all] [--tag] [--priority] [--due] [--project]` | View and filter todos |
 | `cnte done <id>` | Mark a todo complete |
 | `cnte edit <id> "<text>"` | Edit an entry |
+| `cnte delete <id>` / `cnte rm <id>` | Delete a todo entry |
 | `cnte undo` | Revert last action |
 | `cnte carry` | Roll forward unfinished todos |
 | `cnte show` / `cnte cat` | Print full day's file |
